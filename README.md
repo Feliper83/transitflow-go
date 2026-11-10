@@ -115,6 +115,10 @@ curl http://localhost:8082/api/bookings/1
 
 ## Observability
 
+![Grafana dashboard — TransitFlow: SAGA & Payments](docs/dashboard.svg)
+
+> *Illustrative preview of the Grafana dashboard that `docker compose up` provisions automatically. Panels and PromQL queries match the live dashboard; replace with a real screenshot once the stack is running.*
+
 `docker compose up --build` also starts a **Prometheus + Grafana** stack, so you
 can watch the SAGA and payment flow live.
 
