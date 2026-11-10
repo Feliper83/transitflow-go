@@ -16,6 +16,7 @@ import (
 	"github.com/Feliper83/transitflow-go/internal/events"
 	"github.com/Feliper83/transitflow-go/internal/httputil"
 	"github.com/Feliper83/transitflow-go/internal/kafkautil"
+	"github.com/Feliper83/transitflow-go/internal/metrics"
 	"github.com/Feliper83/transitflow-go/internal/payment"
 	"github.com/Feliper83/transitflow-go/internal/pg"
 )
@@ -61,7 +62,8 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", httputil.Health())
-	srv := &http.Server{Addr: addr, Handler: mux}
+	mux.Handle("/metrics", metrics.Handler())
+	srv := &http.Server{Addr: addr, Handler: metrics.HTTPMiddleware(mux)}
 	go func() {
 		log.Info("payment-service health listening", "addr", addr, "declineAbove", declineAbove)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

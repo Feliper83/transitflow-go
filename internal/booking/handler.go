@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/Feliper83/transitflow-go/internal/httputil"
+	"github.com/Feliper83/transitflow-go/internal/metrics"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -30,8 +31,10 @@ func NewHandler(orchestrator *Orchestrator) *Handler {
 // Routes returns the chi router for booking-service.
 func (h *Handler) Routes() http.Handler {
 	r := chi.NewRouter()
+	r.Use(metrics.HTTPMiddleware)
 	r.Use(httputil.Correlation)
 	r.Get("/health", httputil.Health())
+	r.Handle("/metrics", metrics.Handler())
 	r.Route("/api/bookings", func(r chi.Router) {
 		r.Post("/", h.create)
 		r.Get("/{id}", h.get)

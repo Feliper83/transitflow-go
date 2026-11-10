@@ -6,6 +6,7 @@ package booking
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // Booking lifecycle states: PENDING -> SEAT_RESERVED -> CONFIRMED | CANCELLED.
@@ -26,6 +27,9 @@ type Booking struct {
 	Status        string  `json:"status"`
 	CorrelationID string  `json:"-"`
 	FailureReason string  `json:"failureReason,omitempty"`
+	// CreatedAt is when the booking was first persisted (PENDING). It is used to
+	// measure total saga duration and is not part of the JSON API.
+	CreatedAt time.Time `json:"-"`
 }
 
 // IsTerminal reports whether the booking has reached a final state.

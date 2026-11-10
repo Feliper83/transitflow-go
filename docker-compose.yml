@@ -129,3 +129,33 @@ services:
       OUTBOX_POLL_INTERVAL_MS: "2000"
     ports:
       - "8082:8082"
+
+  # ---- Observability ----
+  prometheus:
+    image: prom/prometheus
+    container_name: transitflow-go-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - trip-service
+      - booking-service
+      - payment-service
+
+  grafana:
+    image: grafana/grafana
+    container_name: transitflow-go-grafana
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus

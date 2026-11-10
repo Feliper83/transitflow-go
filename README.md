@@ -113,6 +113,36 @@ curl http://localhost:8082/api/bookings/1
 >   -d '{"tripId": 3, "passengerName": "Grace Hopper", "seatCount": 1}'
 > ```
 
+## Observability
+
+`docker compose up --build` also starts a **Prometheus + Grafana** stack, so you
+can watch the SAGA and payment flow live.
+
+| Tool | URL | Notes |
+|------|-----|-------|
+| Prometheus | http://localhost:9090 | Scrapes every service's `/metrics` every 5s |
+| Grafana | http://localhost:3000 | Anonymous **Admin** access (no login); dashboard pre-loaded |
+
+Every service exposes a Prometheus `/metrics` endpoint on its HTTP port
+(trip `:8081`, booking `:8082`, payment `:8083`). Grafana is provisioned with the
+Prometheus datasource and the **"TransitFlow — SAGA & Payments"** dashboard out of
+the box — open Grafana and it is already there.
+
+**Business metrics** (names are shared across the Java/Go/Python ports so a single
+dashboard works against any of them):
+
+| Metric | Type | Meaning |
+|--------|------|---------|
+| `transitflow_bookings_created_total` | counter | bookings created |
+| `transitflow_bookings_total{status}` | counter | bookings reaching a terminal state (`CONFIRMED` / `CANCELLED`) |
+| `transitflow_payments_total{result}` | counter | processed payments (`COMPLETED` / `FAILED`) |
+| `transitflow_outbox_pending` | gauge | unsent transactional-outbox rows (relay backlog) |
+| `transitflow_saga_duration_seconds` | histogram | time from booking creation to terminal state |
+| `transitflow_http_request_duration_seconds{method,route,status}` | histogram | HTTP request latency |
+
+The dashboard panels cover booking throughput by status, payment results, the
+outbox backlog, SAGA duration p95, booking-creation rate, and HTTP latency p95.
+
 ## Run the tests
 
 ```bash

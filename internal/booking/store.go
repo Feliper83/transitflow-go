@@ -6,8 +6,10 @@ import (
 	"errors"
 	"log/slog"
 	"strconv"
+	"time"
 
 	"github.com/Feliper83/transitflow-go/internal/events"
+	"github.com/Feliper83/transitflow-go/internal/metrics"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -57,12 +59,12 @@ func (s *PgStore) Migrate(ctx context.Context) error {
 	return err
 }
 
-const bookingCols = `id, trip_id, passenger_name, seat_count, amount, status, correlation_id, COALESCE(failure_reason, '')`
+const bookingCols = `id, trip_id, passenger_name, seat_count, amount, status, correlation_id, COALESCE(failure_reason, ''), created_at`
 
 func scanBooking(row pgx.Row) (*Booking, error) {
 	var b Booking
 	err := row.Scan(&b.ID, &b.TripID, &b.PassengerName, &b.SeatCount, &b.Amount,
-		&b.Status, &b.CorrelationID, &b.FailureReason)
+		&b.Status, &b.CorrelationID, &b.FailureReason, &b.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrBookingNotFound
 	}
@@ -88,6 +90,7 @@ func (s *PgStore) CreatePending(ctx context.Context, tripID int64, passengerName
 	if err != nil {
 		return nil, err
 	}
+	metrics.ObserveBookingCreated()
 	s.log.Info("created booking (PENDING)", "bookingId", id, "tripId", tripID)
 	return s.Get(ctx, id)
 }
@@ -131,11 +134,13 @@ func (s *PgStore) ReserveAndRequestPayment(ctx context.Context, bookingID int64)
 // BookingEvent, atomically.
 func (s *PgStore) CancelNoSeat(ctx context.Context, bookingID int64) error {
 	const reason = "No seats available"
-	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	var createdAt time.Time
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		b, err := getTx(ctx, tx, bookingID)
 		if err != nil {
 			return err
 		}
+		createdAt = b.CreatedAt
 		if _, err := tx.Exec(ctx, `UPDATE bookings SET status = $1, failure_reason = $2, updated_at = now() WHERE id = $3`,
 			StatusCancelled, reason, bookingID); err != nil {
 			return err
@@ -148,12 +153,20 @@ func (s *PgStore) CancelNoSeat(ctx context.Context, bookingID int64) error {
 		s.log.Info("booking cancelled: no seats available", "bookingId", bookingID)
 		return nil
 	})
+	if err == nil {
+		metrics.ObserveBookingTerminal(StatusCancelled, createdAt)
+	}
+	return err
 }
 
 // Confirm moves a booking to CONFIRMED and emits a confirmed BookingEvent,
 // atomically. Idempotent: a booking already terminal is skipped.
 func (s *PgStore) Confirm(ctx context.Context, bookingID int64) error {
-	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	var (
+		confirmed bool
+		createdAt time.Time
+	)
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		b, err := getTx(ctx, tx, bookingID)
 		if err != nil {
 			return err
@@ -172,19 +185,29 @@ func (s *PgStore) Confirm(ctx context.Context, bookingID int64) error {
 		if err := writeOutbox(ctx, tx, events.TopicBookingEvents, key(bookingID), "BookingEvent", evt); err != nil {
 			return err
 		}
+		confirmed = true
+		createdAt = b.CreatedAt
 		s.log.Info("booking CONFIRMED", "bookingId", bookingID)
 		return nil
 	})
+	// Count only a real transition, so a redelivered payment result (skipped
+	// above) does not double-count the saga.
+	if err == nil && confirmed {
+		metrics.ObserveBookingTerminal(StatusConfirmed, createdAt)
+	}
+	return err
 }
 
 // CancelAfterPaymentFailure records the cancellation and emits a cancelled
 // BookingEvent, atomically.
 func (s *PgStore) CancelAfterPaymentFailure(ctx context.Context, bookingID int64, reason string) error {
-	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	var createdAt time.Time
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		b, err := getTx(ctx, tx, bookingID)
 		if err != nil {
 			return err
 		}
+		createdAt = b.CreatedAt
 		if _, err := tx.Exec(ctx, `UPDATE bookings SET status = $1, failure_reason = $2, updated_at = now() WHERE id = $3`,
 			StatusCancelled, reason, bookingID); err != nil {
 			return err
@@ -197,4 +220,8 @@ func (s *PgStore) CancelAfterPaymentFailure(ctx context.Context, bookingID int64
 		s.log.Info("booking CANCELLED after payment failure", "bookingId", bookingID, "reason", reason)
 		return nil
 	})
+	if err == nil {
+		metrics.ObserveBookingTerminal(StatusCancelled, createdAt)
+	}
+	return err
 }

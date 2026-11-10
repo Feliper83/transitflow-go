@@ -8,6 +8,7 @@ import (
 	"log/slog"
 
 	"github.com/Feliper83/transitflow-go/internal/events"
+	"github.com/Feliper83/transitflow-go/internal/metrics"
 )
 
 // Payment statuses persisted in the payments table.
@@ -69,6 +70,9 @@ func (s *Service) Process(ctx context.Context, cmd events.ProcessPaymentCommand)
 	if err := s.repo.Save(ctx, p); err != nil {
 		return events.PaymentResultEvent{}, err
 	}
+	// Count only newly processed payments; duplicate commands returned above are
+	// not counted again.
+	metrics.ObservePayment(p.Status)
 	s.log.Info("payment processed", "bookingId", cmd.BookingID, "status", p.Status, "amount", cmd.Amount)
 	return toEvent(p, cmd.CorrelationID), nil
 }

@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: trip-service
+    static_configs:
+      - targets: ["trip-service:8081"]
+        labels:
+          service: trip
+
+  - job_name: booking-service
+    static_configs:
+      - targets: ["booking-service:8082"]
+        labels:
+          service: booking
+
+  - job_name: payment-service
+    static_configs:
+      - targets: ["payment-service:8083"]
+        labels:
+          service: payment

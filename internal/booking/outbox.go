@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Feliper83/transitflow-go/internal/kafkautil"
+	"github.com/Feliper83/transitflow-go/internal/metrics"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/segmentio/kafka-go"
 )
@@ -51,6 +52,13 @@ type outboxRow struct {
 }
 
 func (r *OutboxRelay) publishPending(ctx context.Context) error {
+	// Refresh the pending-outbox gauge each poll so Prometheus sees backlog build-up.
+	var pendingCount int
+	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE sent = FALSE`).Scan(&pendingCount); err != nil {
+		return err
+	}
+	metrics.SetOutboxPending(pendingCount)
+
 	rows, err := r.pool.Query(ctx, `SELECT id, topic, message_key, event_type, payload
 		FROM outbox_events WHERE sent = FALSE ORDER BY created_at ASC LIMIT 100`)
 	if err != nil {

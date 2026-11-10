@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/Feliper83/transitflow-go/internal/httputil"
+	"github.com/Feliper83/transitflow-go/internal/metrics"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -27,8 +28,10 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 // Routes returns the chi router for trip-service.
 func (h *Handler) Routes() http.Handler {
 	r := chi.NewRouter()
+	r.Use(metrics.HTTPMiddleware)
 	r.Use(httputil.Correlation)
 	r.Get("/health", httputil.Health())
+	r.Handle("/metrics", metrics.Handler())
 	r.Route("/api/trips", func(r chi.Router) {
 		r.Get("/", h.list)
 		r.Get("/{id}", h.get)
